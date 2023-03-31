@@ -1,4 +1,5 @@
 import abc
+import asyncio
 from typing import Coroutine, Any
 
 """
@@ -38,8 +39,8 @@ class AbstractRegistrator(abc.ABC):
 
 class AbstractWatcher(abc.ABC):
     """
-    Абстрактный интерфейс, которому должна соответсововать ваша реализация Watcher.
-    При тестировании мы расчитываем на то, что этот интерфейс будет соблюден.
+    Абстрактный интерфейс, которому должна соответствовать ваша реализация Watcher.
+    При тестировании мы рассчитываем на то, что этот интерфейс будет соблюден.
     """
 
     def __init__(self, registrator: AbstractRegistrator):
@@ -65,16 +66,50 @@ class StudentWatcher(AbstractWatcher):
     def __init__(self, registrator: AbstractRegistrator):
         super().__init__(registrator)
         # Your code goes here
-        ...
+        self.registrator = registrator
+        self.tasks = []  # храним список созданных задач
 
     async def start(self) -> None:
         # Your code goes here
-        ...
+        # при новом запуске, если не было завершения,
+        # завершаем все предыдущие задачи
+        # и удаляем их из списка
+        for task in self.tasks:
+            task.cancel()
+            # удаляем задачу из списка
+            self.delete_from_tasks(task)
+
+    def delete_from_tasks(self, task):
+        try:
+            self.tasks.remove(task)
+        except ValueError:
+            pass
 
     async def stop(self) -> None:
         # Your code goes here
-        ...
+        # ждём завершения задач, дадим им на это 100 секунд
+        done, pending = await asyncio.wait(self.tasks, timeout=100)
+        # for (done, pending) in self.tasks:
+        # фиксируем результаты выполнения задач
+        print(self.tasks)
+        for task in done:
+            print(task)
+            # если без ошибок - то сохраняем результат выполнения
+            try:
+                self.registrator.register_value(task.result())
+            # если получаем ошибку - сохраняем её
+            except Exception as error:
+                self.registrator.register_error(error)
+            # удаляем задачу из списка
+            self.delete_from_tasks(task)
+        # отменяем незавершённые задачи
+        for task in pending:
+            task.cancel()
+            # удаляем задачу из списка
+            self.delete_from_tasks(task)
 
     def start_and_watch(self, coro: Coroutine) -> None:
         # Your code goes here
-        ...
+        # создаём новую задачу и сохраняем её в списке
+        new_task = asyncio.create_task(coro)
+        self.tasks.append(new_task)
